@@ -28,7 +28,7 @@ data("MetaCyc_pathway_map")
 head(MetaCyc_pathway_map)
 colnames(MetaCyc_pathway_map)
 
-setwd("/your/path/here/") # edit with real path name
+setwd("/your/path/here") # edit with real path name
  
 # Load sample metadata 
 sample_meta <- read.delim("metadata_WC_HMAvsWT.txt", row.names = 1)
@@ -257,7 +257,7 @@ write.table(
 
 
 # =============================================================================
-# BLOCK 8: Extract significant features from MaAsLin2 results
+# BLOCK 8: Extract significant features from MaAsLin2 results.
 # MaAsLin2 (via R's make.names()) encodes feature names by converting any
 # non-alphanumeric character to a dot, and prepends "X" to names that don't
 # start with a letter. Both the feature names and the abundance table
@@ -269,9 +269,14 @@ write.table(
 res_pathway     <- read.delim("maaslin_pathway_WC/all_results.tsv")
 sig_pathway     <- res_pathway |> dplyr::filter(metadata == "annot", qval < 0.05)
 
-sig_both <- sig_pathway %>%
+# Stricter subset for the second heatmap: features with qval < 0.05 in BOTH
+# the WT row and the D2 HMA row (i.e. significant vs the D7 HMA reference
+# in both comparisons). sig_pathway is already filtered to qval < 0.05, so
+# requiring n_distinct(value) > 1 per feature keeps only features where
+# both the "WT" and "D2 HMA" rows passed that threshold.
+sig_strict <- sig_pathway %>%
   group_by(feature) %>%
-  filter(n_distinct(value) > 1) %>%   # must appear in WT AND D2 HMA
+  filter(n_distinct(value) > 1) %>%
   ungroup()
 
 # make.names()/MaAsLin prepends "X" to feature names that don't start with
@@ -299,17 +304,17 @@ clean_feature_name <- function(x) {
 
 sig_pathway_clean <- sig_pathway$feature |> strip_artifact_X() |> clean_feature_name()
 
-sig_both_clean <- sig_both$feature |> strip_artifact_X() |> clean_feature_name()
+sig_strict_clean <- sig_strict$feature |> strip_artifact_X() |> clean_feature_name()
 
 pathway_abund_rownames <- clean_feature_name(rownames(pathway_abund))
 
 intersect(sig_pathway_clean, pathway_abund_rownames)   # verify matches
 
-sig_both_matched <- intersect(sig_both_clean, pathway_abund_rownames)   # verify matches
-setdiff(sig_both_clean, sig_both_matched)
+sig_strict_matched <- intersect(sig_strict_clean, pathway_abund_rownames)   # verify matches
+setdiff(sig_strict_clean, sig_strict_matched)
 matched_idx <- pathway_abund_rownames %in% sig_pathway_clean
 
-matched_idx_both <- pathway_abund_rownames %in% sig_both_clean
+matched_idx_strict <- pathway_abund_rownames %in% sig_strict_clean
 
 df_sig_p <- pathway_abund[matched_idx, ] |>
   as.data.frame() |>
@@ -317,7 +322,7 @@ df_sig_p <- pathway_abund[matched_idx, ] |>
   pivot_longer(-pathway_clean, names_to = "Sample", values_to = "Abundance") |>
   left_join(mt$sample_table |> rownames_to_column("Sample"), by = "Sample")
 
-df_sig_both_p <- pathway_abund[matched_idx_both, ] |>
+df_sig_strict_p <- pathway_abund[matched_idx_strict, ] |>
   as.data.frame() |>
   rownames_to_column("pathway_clean") |>
   pivot_longer(-pathway_clean, names_to = "Sample", values_to = "Abundance") |>
@@ -400,16 +405,17 @@ ggsave("superclass2_abundance_WC_NOunclassified_sig.png", plot = pbar, width = 8
 
 # =============================================================================
 # BLOCK 10: Heatmaps — significant pathway features
-# Two options are provided: a ggplot2 tile heatmap (Option 1) and a
-# pheatmap clustered heatmap with sample annotations (Option 2).
-# Option 1 uses df_sig_p only. Option 2 produces two heatmaps: one from
-# df_sig_p and one from df_sig_both_p (pathways significant in both WT and
-# D2 HMA comparisons). Both df_sig_p and df_sig_both_p were built in Block 8.
+# pheatmap clustered heatmaps with sample annotations. Two versions are
+# produced: a full heatmap of all pathways significant for "annot"
+# (df_sig_p, qval < 0.05, built in Block 8), and a stricter heatmap
+# restricted to pathways significant (qval < 0.05) in BOTH the WT and
+# D2 HMA comparisons vs the D7 HMA reference (df_sig_strict_p, also built
+# in Block 8).
 # =============================================================================
 
 # Restore factor order after joins (ensures correct panel order in facet_grid)
 df_sig_p$annot <- factor(df_sig_p$annot, levels = c("WT", "D2 HMA", "D7 HMA"))
-df_sig_both_p$annot <- factor(df_sig_both_p$annot, levels = c("WT", "D2 HMA", "D7 HMA"))
+df_sig_strict_p$annot <- factor(df_sig_strict_p$annot, levels = c("WT", "D2 HMA", "D7 HMA"))
 
 # Order pathways by total abundance for consistent row ordering
 pathway_order <- df_sig_p |>
@@ -418,54 +424,32 @@ pathway_order <- df_sig_p |>
   arrange(desc(total_abundance)) |>
   pull(pathway_clean)
 
-pathway_order_both <- df_sig_both_p |>
+pathway_order_strict <- df_sig_strict_p |>
   group_by(pathway_clean) |>
   summarise(total_abundance = sum(Abundance)) |>
   arrange(desc(total_abundance)) |>
   pull(pathway_clean)
 
 df_sig_p$pathway_clean <- factor(df_sig_p$pathway_clean, levels = pathway_order)
-df_sig_both_p$pathway_clean <- factor(df_sig_both_p$pathway_clean, levels = pathway_order_both)
+df_sig_strict_p$pathway_clean <- factor(df_sig_strict_p$pathway_clean, levels = pathway_order_strict)
 
 
-# --- Option 1: ggplot2 tile heatmap ---
-hmap <- ggplot(df_sig_p, aes(x = Sample, y = pathway_clean, fill = Abundance)) +
-  geom_tile(color = "white") +
-  scale_fill_gradient(low = "white", high = "darkgreen") +
-  facet_grid(~ annot, scales = "free_x", space = "free") +
-  theme_bw() +
-  theme(
-    axis.text.x  = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
-    axis.text.y  = element_text(size = 10, face = "bold"),
-    axis.title   = element_blank(),
-    panel.grid   = element_blank(),
-    strip.text   = element_text(size = 9, face = "bold"),
-    legend.title = element_text(size = 12, face = "bold"),
-    legend.text  = element_text(size = 10)
-  ) +
-  labs(fill = "Abundance")
-
-hmap
-
-ggsave("heatmap_significant_pathways.png", hmap, width = 12, height = 8, dpi = 300)
-ggsave("heatmap_significant_pathways.pdf", hmap, width = 12, height = 8)
-
-# --- Option 2: pheatmap with hierarchical clustering and sample annotations ---
+# --- pheatmap with hierarchical clustering and sample annotations ---
 
 # Reshape to pathways x samples matrix
 data_otu <- df_sig_p |>
   select(Sample, pathway_clean, Abundance) |>
   pivot_wider(names_from = Sample, values_from = Abundance, values_fill = 0)
 
-data_otu_both <- df_sig_both_p |>
+data_otu_strict <- df_sig_strict_p |>
   select(Sample, pathway_clean, Abundance) |>
   pivot_wider(names_from = Sample, values_from = Abundance, values_fill = 0)
 
 data_otu_mat <- as.matrix(data_otu[, -1])
 rownames(data_otu_mat) <- data_otu$pathway_clean
 
-data_otu_mat_both <- as.matrix(data_otu_both[, -1])
-rownames(data_otu_mat_both) <- data_otu_both$pathway_clean
+data_otu_mat_strict <- as.matrix(data_otu_strict[, -1])
+rownames(data_otu_mat_strict) <- data_otu_strict$pathway_clean
 
 # Sample annotation bar colours
 sample_coloring <- df_sig_p |>
@@ -476,14 +460,27 @@ sample_coloring <- df_sig_p |>
 palette_annot <- c("WT" = "gray43", "D2 HMA" = "steelblue3", "D7 HMA" = "indianred3")
 ann_colors    <- list(annot = palette_annot)
 
-# Plot pheatmap with row z-score scaling and clustering on both axes
+# Fix column (sample) order to WT, D2 HMA, D7 HMA rather than letting
+# pheatmap cluster them. Both matrices contain the same full sample set
+# (they're subsets of the same pathway_abund columns), so one ordering
+# derived from sample_coloring applies to both.
+sample_order <- sample_coloring |>
+  rownames_to_column("Sample") |>
+  arrange(factor(annot, levels = c("WT", "D2 HMA", "D7 HMA"))) |>
+  pull(Sample)
+
+data_otu_mat        <- data_otu_mat[, sample_order]
+data_otu_mat_strict <- data_otu_mat_strict[, sample_order]
+
+# Plot pheatmap with row z-score scaling; columns are fixed to group order
+# above rather than clustered (cluster_cols = FALSE)
 phmap <- pheatmap(
   mat                  = data_otu_mat,
   scale                = "row",
   show_rownames        = TRUE,
   show_colnames        = FALSE,
   cluster_rows         = TRUE,
-  cluster_cols         = TRUE,
+  cluster_cols         = FALSE,
   annotation_col       = sample_coloring,
   annotation_names_col = FALSE,
   annotation_colors    = ann_colors,
@@ -492,13 +489,13 @@ phmap <- pheatmap(
   cellheight           = 4
 )
 
-phmap_both <- pheatmap(
-  mat                  = data_otu_mat_both,
+phmap_strict <- pheatmap(
+  mat                  = data_otu_mat_strict,
   scale                = "row",
   show_rownames        = TRUE,
   show_colnames        = FALSE,
   cluster_rows         = TRUE,
-  cluster_cols         = TRUE,
+  cluster_cols         = FALSE,
   annotation_col       = sample_coloring,
   annotation_names_col = FALSE,
   annotation_colors    = ann_colors,
@@ -512,32 +509,41 @@ png("heatmap_significant_pathways_pheatmap.png", width = 9, height = 10, units =
 grid::grid.draw(phmap$gtable)
 dev.off()
 
-png("heatmap_significant_pathways_pheatmap_both.png", width = 9, height = 10, units = "in", res = 300)
-grid::grid.draw(phmap_both$gtable)
+png("heatmap_significant_pathways_pheatmap_strict.png", width = 9, height = 10, units = "in", res = 300)
+grid::grid.draw(phmap_strict$gtable)
 dev.off()
 
 pdf("heatmap_significant_pathways_pheatmap.pdf", width = 9, height = 10)
 grid::grid.draw(phmap$gtable)
 dev.off()
 
-pdf("heatmap_significant_pathways_pheatmap_both.pdf", width = 9, height = 10)
-grid::grid.draw(phmap_both$gtable)
+pdf("heatmap_significant_pathways_pheatmap_strict.pdf", width = 9, height = 10)
+grid::grid.draw(phmap_strict$gtable)
 dev.off()
 
-# Highlight the chitin derivatives degradation row label in red
-row_labels  <- phmap$gtable$grobs[[which(phmap$gtable$layout$name == "row_names")]]
-chitin_idx  <- which(row_labels$label == "chitin derivatives degradation")
+# Highlight the chitin derivatives degradation row label in red.
+# Shared helper so both heatmaps (full and strict) get the same treatment.
+highlight_row_label <- function(ph, label, color = "red") {
+  row_names_idx <- which(ph$gtable$layout$name == "row_names")
+  row_labels    <- ph$gtable$grobs[[row_names_idx]]
+  target_idx    <- which(row_labels$label == label)
 
-if(length(chitin_idx) == 0) {
-  warning("'chitin derivatives degradation' not found among the significant ",
-          "pathway row labels - highlighting step skipped. Check pathway_clean ",
-          "formatting if this pathway was expected to be present.")
-} else {
+  if (length(target_idx) == 0) {
+    warning("'", label, "' not found among the significant pathway row ",
+            "labels - highlighting step skipped. Check pathway_clean ",
+            "formatting if this pathway was expected to be present.")
+    return(ph)
+  }
+
   label_colours <- rep("black", length(row_labels$label))
-  label_colours[chitin_idx] <- "red"
+  label_colours[target_idx] <- color
   row_labels$gp$col <- label_colours
-  phmap$gtable$grobs[[which(phmap$gtable$layout$name == "row_names")]] <- row_labels
+  ph$gtable$grobs[[row_names_idx]] <- row_labels
+  ph
 }
+
+phmap        <- highlight_row_label(phmap, "chitin derivatives degradation")
+phmap_strict <- highlight_row_label(phmap_strict, "chitin derivatives degradation")
 
 png("heatmap_significant_pathways_chitin.png", width = 9, height = 10, units = "in", res = 300)
 grid::grid.draw(phmap$gtable)
@@ -545,6 +551,14 @@ dev.off()
 
 pdf("heatmap_significant_pathways_chitin.pdf", width = 9, height = 10)
 grid::grid.draw(phmap$gtable)
+dev.off()
+
+png("heatmap_significant_pathways_chitin_strict.png", width = 9, height = 10, units = "in", res = 300)
+grid::grid.draw(phmap_strict$gtable)
+dev.off()
+
+pdf("heatmap_significant_pathways_chitin_strict.pdf", width = 9, height = 10)
+grid::grid.draw(phmap_strict$gtable)
 dev.off()
 
 
@@ -592,9 +606,8 @@ chitin_qvals   # print for a manual sanity check against the values discussed ab
 
 q_to_stars <- function(q) {
   if (length(q) == 0 || is.na(q)) return("ns")
-  if (q < 0.0001) "****"
-  else if (q < 0.001) "***"
-  else if (q < 0.01) "**"
+  if (q < 0.0001) "***"
+  else if (q < 0.001) "**"
   else if (q < 0.05) "*"
   else "ns"
 }

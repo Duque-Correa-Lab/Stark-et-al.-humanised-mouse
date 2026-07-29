@@ -13,6 +13,7 @@ library(RColorBrewer)
 library(pheatmap)
 library(grid)
 library(ggpubr)
+library(ggsignif)
 library(ggprism)
 
 
@@ -25,7 +26,7 @@ data("MetaCyc_pathway_map")
 head(MetaCyc_pathway_map)
 colnames(MetaCyc_pathway_map)
 
-setwd("/Users/kas206/Library/Mobile Documents/com~apple~CloudDocs/Documents/Paper_revision/Metagenomics/GitHub/") # edit with real path
+setwd("/your/path/here") # edit with real path
 
 # Load sample metadata 
 sample_meta <- read.delim("metadata_WC_SC_C.txt", row.names = 1)
@@ -291,8 +292,7 @@ strip_artifact_X <- function(x) {
 }
 
 # Shared cleaning function applied identically to MaAsLin feature names and
-# pathway_abund rownames. Rather than whitelist individual punctuation
-# characters one at a time, collapse ANY run of non-alphanumeric characters
+# pathway_abund rownames. Collapse ANY run of non-alphanumeric characters
 # into a single space - this mirrors what MaAsLin's own sanitization already
 # does to build feature names, so both sides end up in the same normalized
 # form regardless of which specific punctuation/HTML entity/Greek letter a
@@ -321,27 +321,6 @@ df_sig_p <- pathway_abund[matched_idx, ] |>
   pivot_longer(-pathway_clean, names_to = "Sample", values_to = "Abundance") |>
   left_join(mt$sample_table |> rownames_to_column("Sample"), by = "Sample")
 
-# --- Significant Superclass1 features ---
-# NOTE: this claim was written for the WT/D2 HMA/D7 HMA whole-caecum
-# comparison and has not been reverified for this D7-HMA scraping-vs-content
-# comparison - check nrow(sig_superclass1) for this dataset before relying
-# on it. df_sig_s1 is retained either way as a template for downstream use.
-
-res_superclass1  <- read.delim("maaslin_superclass1_D7HMA/all_results.tsv")
-sig_superclass1  <- res_superclass1 |> dplyr::filter(metadata == "annot2", qval < 0.05)
-
-sig_superclass1_clean <- sig_superclass1$feature |> strip_artifact_X() |> clean_feature_name()
-
-superclass1_abund_rownames <- clean_feature_name(rownames(superclass1_abund))
-
-intersect(sig_superclass1_clean, superclass1_abund_rownames)   # verify matches
-
-matched_idx <- superclass1_abund_rownames %in% sig_superclass1_clean
-df_sig_s1 <- superclass1_abund[matched_idx, ] |>
-  as.data.frame() |>
-  rownames_to_column("Superclass1") |>
-  pivot_longer(-Superclass1, names_to = "Sample", values_to = "Abundance") |>
-  left_join(mt$sample_table |> rownames_to_column("Sample"), by = "Sample")
 
 # --- Significant Superclass2 features ---
 res_superclass2  <- read.delim("maaslin_superclass2_D7HMA/all_results.tsv")
@@ -407,9 +386,8 @@ ggsave("superclass2_abundance_D7HMA_NOunclassified_sig.png", plot = pbar, width 
 
 # =============================================================================
 # BLOCK 10: Heatmaps — significant pathway features
-# Two options are provided: a ggplot2 tile heatmap (Option 1) and a
-# pheatmap clustered heatmap with sample annotations (Option 2).
-# Both use df_sig_p built in Block 8.
+# pheatmap clustered heatmap with sample annotations, built from df_sig_p
+# (Block 8).
 # =============================================================================
 
 # Restore factor order after joins (ensures correct panel order in facet_grid)
@@ -424,29 +402,7 @@ pathway_order <- df_sig_p |>
 
 df_sig_p$pathway_clean <- factor(df_sig_p$pathway_clean, levels = pathway_order)
 
-# --- Option 1: ggplot2 tile heatmap ---
-hmap <- ggplot(df_sig_p, aes(x = Sample, y = pathway_clean, fill = Abundance)) +
-  geom_tile(color = "white") +
-  scale_fill_gradient(low = "white", high = "darkgreen") +
-  facet_grid(~ annot2, scales = "free_x", space = "free") +
-  theme_bw() +
-  theme(
-    axis.text.x  = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
-    axis.text.y  = element_text(size = 10, face = "bold"),
-    axis.title   = element_blank(),
-    panel.grid   = element_blank(),
-    strip.text   = element_text(size = 9, face = "bold"),
-    legend.title = element_text(size = 12, face = "bold"),
-    legend.text  = element_text(size = 10)
-  ) +
-  labs(fill = "Abundance")
-
-hmap
-
-ggsave("heatmap_significant_pathways.png", hmap, width = 12, height = 8, dpi = 300)
-ggsave("heatmap_significant_pathways.pdf", hmap, width = 12, height = 8)
-
-# --- Option 2: pheatmap with hierarchical clustering and sample annotations ---
+# --- pheatmap with hierarchical clustering and sample annotations ---
 
 # Reshape to pathways x samples matrix
 data_otu <- df_sig_p |>
@@ -509,7 +465,11 @@ dev.off()
 
 # =============================================================================
 # BLOCK 11: Single pathway plot — "chitin deacetylation"
-# Individual sample jitter with mean and SEM.
+# Individual sample jitter with mean and SEM. Significance bracket shows the
+# MaAsLin2 q-value (from res_pathway, loaded in Block 8) for the luminal
+# content vs mucosal scraping comparison, rather than a separate pairwise
+# Wilcoxon test - MaAsLin2's TSS+LOG regression model (Block 6) is the test
+# this pathway's significance is actually based on for reporting.
 # =============================================================================
 
 grep("chitin deacetylation", rownames(pathway_abund), value = TRUE)
@@ -528,8 +488,18 @@ sample_meta_fixed <- sample_meta |>
 df_path <- df_path |>
   left_join(sample_meta_fixed, by = "Sample")
 
+# Restore factor order after join
+df_path$annot2 <- factor(df_path$annot2, levels = c("luminal content", "mucosal scraping"))
 
-# --- MaAsLin2 Significance Extraction ---
+# Extract the MaAsLin2 q-value for this pathway from the already-loaded
+# res_pathway (Block 8). MaAsLin2 was run with "mucosal scraping" as the
+# reference level, so only the "luminal content" contrast is available here.
+chitin_qval <- res_pathway |>
+  dplyr::filter(feature == "chitin.deacetylation", metadata == "annot2") |>
+  dplyr::select(value, qval)
+
+chitin_qval   # print for a manual sanity check against the values discussed above
+
 q_to_stars <- function(q) {
   if (length(q) == 0 || is.na(q)) return("ns")
   if (q < 0.0001) "***"
@@ -538,22 +508,13 @@ q_to_stars <- function(q) {
   else "ns"
 }
 
-# Match naming variations in your res_pathway tracking
-chitin_row <- res_pathway |>
-  dplyr::filter(
-    (feature == "chitin.deacetylation"), 
-    metadata == "annot2"
-  )
+q_lumen <- chitin_qval$qval[chitin_qval$value == "luminal content"]
 
-# Extract q-value and map to significance star string
-q_val_maaslin     <- chitin_row$qval
-sig_label_maaslin <- q_to_stars(q_val_maaslin)
+sig_comparisons <- list(c("luminal content", "mucosal scraping"))
+sig_label       <- q_to_stars(q_lumen)
 
-# Dynamic bracket sizing calculations
-ymax   <- max(df_path$Abundance, na.rm = TRUE)
-yrange <- diff(range(df_path$Abundance, na.rm = TRUE))
-if (yrange == 0) yrange <- ymax * 0.1 
-
+ymax   <- max(df_path$Abundance)
+yrange <- diff(range(df_path$Abundance))
 
 # Plot
 
@@ -563,19 +524,17 @@ plot_chitin <- ggplot(df_path, aes(x = annot2, y = Abundance, color = annot2)) +
   stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2, color = "black", size = 0.8) +
   scale_y_continuous(
     limits  = c(0, NA),
-    expand  = expansion(mult = c(0, 0.20)) # Headroom for the significance bar
+    expand  = expansion(mult = c(0, 0.1))
   ) +
   scale_color_manual(values = c("luminal content" = "#FA8", "mucosal scraping" = "#9E2A2F")) +
-  # Replaced stat_compare_means with geom_signif using MaAsLin2 metrics
-  ggsignif::geom_signif(
-    comparisons = list(c("luminal content", "mucosal scraping")),
-    annotations = sig_label_maaslin,
+  geom_signif(
+    comparisons = sig_comparisons,
+    annotations = sig_label,
     y_position  = ymax + yrange * 0.08,
     tip_length  = 0.01,
-    bracket.size = 0.8,
     size        = 1.2,
-    textsize    = 6,
-    color       = "black"
+    color       = "black",
+    textsize    = 6
   ) +
   labs(
     title = "Chitin deacetylation pathway",
