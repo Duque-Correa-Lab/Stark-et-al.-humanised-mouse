@@ -10,7 +10,7 @@ library(ggprism)
 library(ggsignif)     
 library(dunn.test)    
 
-setwd("/Your/path/here") #add correct path
+setwd("your path")
 
 # Standard asterisk convention for p-values, shared across plots in this script
 
@@ -117,7 +117,7 @@ comparison_name <- "D7 HMA - WT"
 show_signif <- FALSE
 
 if (kruskal_test_result$p.value < 0.05) {
-  dunn_test <- dunn.test(shannon_meta_wc$Shannon, shannon_meta_wc$annot, kw = TRUE, label = TRUE)
+  dunn_test <- dunn.test(shannon_meta_wc$Shannon, shannon_meta_wc$annot, kw = TRUE, label = TRUE, method = "bh")
   print(dunn_test)
 
   p_value <- dunn_test$P.adjusted[
@@ -176,7 +176,6 @@ alpha.plot <- ggplot(shannon_meta_wc,
   geom_boxplot(
     color = "black",
     width = 0.5,
-    coef = 0,
     outlier.shape = NA,
     alpha = 0.7
   ) +
