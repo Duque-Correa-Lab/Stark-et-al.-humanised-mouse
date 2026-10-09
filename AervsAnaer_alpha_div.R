@@ -16,8 +16,8 @@ library(tidyverse)     # For tidy data manipulation
 
 # Set working directory and load OTU data
 cat("Loading data ...\n")
-setwd("/your/path/here/") # <-- Use your actual path
-data_otu = read.delim("merged_abundance_table.txt", skip=1L)
+setwd("your path")
+data_otu = read.delim("merged_abundance_table_scraping.txt", skip=1L)
 
 # Extract and clean taxonomy information
 phylum.df = as.data.frame(data_otu[grepl("s__", data_otu$clade_name), "clade_name"])
@@ -33,10 +33,11 @@ species.df = data_otu[grepl("s__", data_otu$clade_name),]
 species.df = species.df[!grepl("t__", species.df$clade_name),]
 rownames(species.df) = species.df$clade_name
 species.df = t(species.df[,-1]) # Transpose and remove clade_name column
+rownames(species.df) <- sub("_results_gtdb$", "", rownames(species.df))
 
 # Load and align metadata with species data
 metadata = read.delim("AerobevsAnaerobe_scraping_metadata.txt")
-rownames(metadata) = metadata$run.accession
+rownames(metadata) = metadata$run_accession
 
 # ----------------------------------------
 # Alpha diversity analysis (Shannon-index)
@@ -91,7 +92,7 @@ summary_df <- metadata.filt %>%
 
 # Generate alpha diversity boxplot with significance annotations
 alpha.plot = ggplot(metadata.filt, aes(annot2, Shannon, colour = annot1, shape = annot2, fill = annot1)) + 
-  geom_boxplot(outliers = FALSE, coef = 0, width = 0.5, position = position_dodge(width = 0.5)) +
+  geom_boxplot(outliers = FALSE, width = 0.5, position = position_dodge(width = 0.5)) +
   theme_prism() +
   geom_point(position = position_jitter(width = 0.2), size = 3) +
   stat_signif(comparisons = signif_pairs,
@@ -102,11 +103,11 @@ alpha.plot = ggplot(metadata.filt, aes(annot2, Shannon, colour = annot1, shape =
   theme(axis.title = element_text(size=14, face = "bold"),
         axis.title.y = element_text(size = 18, face = "bold")) +  # Increase y-axis label size
   theme(axis.text.x = element_text(size = 18, face = "bold"),  legend.position = "none") +
-  geom_signif(comparisons = list(comp1=c("Aerobic", "Anaerobic"),
-                                 comp3=c("Aerobic", "Uncultured"),
-                                 comp2=c("Uncultured", "Anaerobic")),
-              map_signif_level = FALSE, step_increase = 0.1, textsize = 4, y_position = c(3.2),
-              color = "black") +
+  # geom_signif(comparisons = list(comp1=c("Aerobic", "Anaerobic"),
+  #                                comp3=c("Aerobic", "Uncultured"),
+  #                                comp2=c("Uncultured", "Anaerobic")),
+  #             map_signif_level = FALSE, step_increase = 0.1, textsize = 4, y_position = c(3.2),
+  #             color = "black") +
   scale_colour_manual(values = c("D7 HMA" = "indianred4"))+
   scale_fill_manual(values = c( "D7 HMA" = "indianred4"))+
   scale_shape_manual(values = c(15, 16, 17))
