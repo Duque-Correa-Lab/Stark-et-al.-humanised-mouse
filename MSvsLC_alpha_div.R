@@ -14,8 +14,8 @@ library(ggpubr)        # For geom_signif()
 
 # Set working directory and load OTU data
 cat("Loading data ...\n")
-setwd("/Users/your/path/here")
-data_otu = read.delim("merged_abundance_table.txt", skip=1L)
+setwd("your path")
+data_otu = read.delim("MSvsLC_merged_abundance_table_github2.txt", skip=1L)
 
 # Extract and clean taxonomy information
 phylum.df = as.data.frame(data_otu[grepl("s__", data_otu$clade_name), "clade_name"])
@@ -46,7 +46,7 @@ cat("Calculating Shannon-index ...\n")
 alpha.div = diversity(species.df, index = "shannon")
 metadata.filt$Shannon = alpha.div[rownames(metadata.filt)]
 metadata.filt = metadata.filt[metadata.filt$annot1 != "WT", ]
-metadata.filt = metadata.filt[metadata.filt$annot1 != "D7 HMA", ]
+metadata.filt = metadata.filt[metadata.filt$annot1 != "D2 HMA", ]
 metadata.filt$annot2 = factor(metadata.filt$annot2, levels = c("luminal content", "mucosal scraping"))
 
 # Perform Wilcoxon rank-sum test for 2-group comparison
@@ -71,7 +71,7 @@ summary_df <- metadata.filt %>%
 
 # Generate alpha diversity boxplot with significance annotations
 alpha.plot = ggplot(metadata.filt, aes(annot2, Shannon, fill = annot2)) + 
-  geom_boxplot(outliers = FALSE, coef = 0, width = 0.5, position = position_dodge(width = 0.5), color = "black") +
+  geom_boxplot(outliers = FALSE, width = 0.5, position = position_dodge(width = 0.5), color = "black") +
   geom_point(position = position_jitter(width = 0.2), colour = "black", size = 2) +
   theme_prism() +
   labs(x = "", y = "Shannon-index") +
