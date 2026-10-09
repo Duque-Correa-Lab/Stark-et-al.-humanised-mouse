@@ -13,8 +13,8 @@ library(ggpubr)        # For geom_signif()
 
 # Set working directory and load OTU data
 cat("Loading data ...\n")
-setwd("/your/path/here/")
-data_otu = read.delim("merged_abundance_table.txt", skip=1L)
+setwd("your path")
+data_otu = read.delim("merged_abundance_table_whole_caecum.txt", skip=1L)
 
 # Extract and clean taxonomy information
 phylum.df = as.data.frame(data_otu[grepl("s__", data_otu$clade_name), "clade_name"])
@@ -30,10 +30,11 @@ species.df = data_otu[grepl("s__", data_otu$clade_name),]
 species.df = species.df[!grepl("t__", species.df$clade_name),]
 rownames(species.df) = species.df$clade_name
 species.df = t(species.df[,-1])
+rownames(species.df) <- sub("_results_gtdb$", "", rownames(species.df))
 
 # Load and align metadata with species data
 metadata = read.delim("metadata_WC_HMAvsWT.txt")
-rownames(metadata) = metadata$run.accession
+rownames(metadata) = metadata$run_accession
 metadata.filt = metadata[rownames(species.df), ]
 
 
@@ -45,14 +46,14 @@ metadata.filt = metadata[rownames(species.df), ]
 cat("Calculating Shannon-index ...\n")
 alpha.div = diversity(species.df, index = "shannon")
 metadata.filt$Shannon = alpha.div[rownames(metadata.filt)]
-metadata.filt$annot = factor(metadata.filt$sample.title, levels = c("WT", "D2 HMA", "D7 HMA"))
+# metadata.filt$annot = factor(metadata.filt$sample_title, levels = c("WT", "D2 HMA", "D7 HMA"))
 
 # Perform Kruskal-Wallis test
-kruskal_test_result <- kruskal.test(Shannon ~ sample.title, data = metadata.filt)
+kruskal_test_result <- kruskal.test(Shannon ~ annot, data = metadata.filt)
 
 # Post-hoc Dunn’s test and adjust p-values if Kruskal-Wallis is significant
 if (kruskal_test_result$p.value < 0.05) {
-  dunn_test <- dunn.test(metadata.filt$Shannon, metadata.filt$sample.title, kw = TRUE, label = TRUE)
+  dunn_test <- dunn.test(metadata.filt$Shannon, metadata.filt$annot, kw = TRUE, label = TRUE, method = "bh")
   print(dunn_test)
 }
 
@@ -70,8 +71,8 @@ summary_df <- metadata.filt %>%
 # ----------------------------------------
 
 # Generate alpha diversity boxplot with significance annotations
-alpha.plot = ggplot(metadata.filt, aes(x = sample.title, y = Shannon, fill = sample.title)) + 
-  geom_boxplot(outliers = FALSE, coef = 0, width = 0.5, position = position_dodge(width = 0.5), color = "black") +
+alpha.plot = ggplot(metadata.filt, aes(x = annot, y = Shannon, fill = annot)) + 
+  geom_boxplot(outliers = FALSE, width = 0.5, position = position_dodge(width = 0.5), color = "black") +
   geom_point(position = position_jitter(width = 0.2), colour = "black", size = 2) +
   theme_prism() +
   geom_signif(comparisons = list(comp1=c("D2 HMA", "WT"),
