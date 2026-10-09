@@ -11,7 +11,7 @@ library(dunn.test)
 library(dplyr)
 library(ggplot2)
 
-setwd("/Your/path/here") #add correct path
+setwd("your path")
 
 # Standard asterisk convention for p-values, shared across plots in this script
 p_to_stars <- function(p) {
@@ -212,7 +212,7 @@ for(cfg in plot_configs) {
   # Dunn test
   # ============================
   
-  dunn <- dunn.test(df$Shannon, df$annot, kw = TRUE, label = TRUE)
+  dunn <- dunn.test(df$Shannon, df$annot, kw = TRUE, label = TRUE, method = "bh")
   print(dunn)
   
   # Extract significant comparisons
@@ -244,7 +244,6 @@ for(cfg in plot_configs) {
     geom_boxplot(
       color = "black",
       width = 0.55,
-      coef = 0,
       alpha = 0.8,
       outlier.shape = NA
     ) +
