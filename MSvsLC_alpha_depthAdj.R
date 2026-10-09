@@ -11,7 +11,7 @@ library(dunn.test)    # for Dunn post-hoc
 library(dplyr)
 library(ggplot2)
 
-setwd("/Your/path/here") #add correct path
+setwd("your path")
 
 # Standard asterisk convention for p-values, shared across plots in this script
 p_to_stars <- function(p) {
@@ -278,7 +278,6 @@ for(cfg in plot_configs) {
     geom_boxplot(
       color = "black",
       width = 0.55,
-      coef = 0,
       alpha = 0.8,
       outlier.shape = NA
     ) +
@@ -333,7 +332,6 @@ for(cfg in plot_configs) {
       textsize = 8,
       color = "black"
     ) 
-  
   ggsave(cfg$filename,
          p,
          width = 8,
